@@ -87,6 +87,17 @@ def analyze_sentiment(text, model, vectorizer, n_features):
     sentiment = model.predict(features)[0]
     probabilities = model.predict_proba(features)[0]
     
+    # Tambah confidence threshold
+    max_prob = max(probabilities)
+    if max_prob < 0.6:  # Jika confidence rendah
+        # Ambil data features dari extra_features (yang sudah dalam bentuk DataFrame)
+        if extra_features['positive_words'].iloc[0] > extra_features['negative_words'].iloc[0]:
+            return 'positive', probabilities
+        elif extra_features['negative_words'].iloc[0] > extra_features['positive_words'].iloc[0]:
+            return 'negative', probabilities
+        else:
+            return 'neutral', probabilities
+    
     return sentiment, probabilities
 
 # Load model and vectorizer

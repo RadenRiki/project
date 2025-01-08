@@ -44,13 +44,14 @@ def test_preprocessing():
         print(f"Language: {row['language']}")
         print(f"Cleaned text: {row['cleaned_content']}")
         print(f"Original Score: {row['score']}")
-        print(f"Corrected Score: {row['corrected_score']}")
+        # Hapus line ini: print(f"Corrected Score: {row['corrected_score']}")
         print(f"Final Sentiment: {row['sentiment']}")
         print("-" * 70)
 
     # Print statistics
     print("\n=== STATISTICS ===")
     print(f"Total samples processed: {len(df_clean)}")
+    
     print("\nLanguage distribution:")
     lang_dist = Counter(df_clean['language'])
     for lang, count in lang_dist.items():
@@ -61,9 +62,10 @@ def test_preprocessing():
     for sent, count in sent_dist.items():
         print(f"{sent}: {count} ({count/len(df_clean)*100:.1f}%)")
 
-    print("\nScore correction stats:")
-    score_changes = (df_clean['score'] != df_clean['corrected_score']).sum()
-    print(f"Reviews with corrected scores: {score_changes} ({score_changes/len(df_clean)*100:.1f}%)")
+    # Hapus bagian ini karena corrected_score tidak ada
+    # print("\nScore correction stats:")
+    # score_changes = (df_clean['score'] != df_clean['corrected_score']).sum()
+    # print(f"Reviews with corrected scores: {score_changes} ({score_changes/len(df_clean)*100:.1f}%)")
 
 if __name__ == "__main__":
     test_preprocessing()

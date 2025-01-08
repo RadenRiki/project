@@ -69,15 +69,20 @@ def extract_features(text):
 
 def create_ensemble_model():
     """
-    Create an ensemble model combining RF, LogisticRegression, and LinearSVC
+    Create an ensemble model combining RF, LogisticRegression, and NLTK
     """
+    from nltk.sentiment import SentimentIntensityAnalyzer
+    
+    # Tambahkan NLTK analyzer
+    nltk_analyzer = SentimentIntensityAnalyzer()
+    
+    # Adjust hyperparameters RF
     rf = RandomForestClassifier(
-        n_estimators=200,
-        max_depth=30,
-        min_samples_split=5,
+        n_estimators=300,  # Naikkan dari 200
+        max_depth=40,      # Naikkan dari 30
+        min_samples_split=3,  # Turunkan dari 5
         class_weight='balanced',
-        random_state=42,
-        n_jobs=-1
+        random_state=42
     )
     
     lr = LogisticRegression(
