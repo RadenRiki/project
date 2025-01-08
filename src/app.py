@@ -1,3 +1,5 @@
+# app.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,6 +10,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 from scipy import sparse
+import re
 
 def extract_features(text):
     """Extract additional features from text"""
@@ -16,23 +19,51 @@ def extract_features(text):
     # Convert to string if not already
     text = str(text).lower()
     
-    # Sentiment word counts
-    positive_words = ['good', 'great', 'awesome', 'excellent', 'love', 'perfect']
-    negative_words = ['bad', 'terrible', 'worst', 'poor', 'horrible', 'waste']
-    neutral_words = ['okay', 'average', 'moderate', 'decent', 'normal', 'fine']
+    # Extended sentiment words lists
+    positive_words = [
+        'good', 'great', 'awesome', 'excellent', 'love', 'perfect', 'best', 'amazing',
+        'wonderful', 'fantastic', 'super', 'brilliant', 'outstanding', 'superb',
+        'happy', 'pleased', 'satisfied', 'smooth', 'helpful', 'impressive', 'easy',
+        'fast', 'reliable', 'efficient', 'improved', 'recommended', 'worth'
+    ]
+    negative_words = [
+        'bad', 'terrible', 'worst', 'poor', 'horrible', 'waste', 'crash', 'bug',
+        'problem', 'awful', 'useless', 'annoying', 'disappointing', 'frustrating',
+        'slow', 'broken', 'error', 'issues', 'fail', 'garbage', 'rubbish', 'hate',
+        'unusable', 'expensive', 'spam', 'ads', 'scam', 'freeze', 'stuck'
+    ]
+    neutral_words = [
+        'okay', 'average', 'moderate', 'decent', 'normal', 'fine', 'alright',
+        'fair', 'regular', 'basic', 'simple', 'standard', 'typical', 'expected',
+        'usual', 'common', 'middle', 'medium', 'neither', 'mixed', 'partial'
+    ]
     
-    features['positive_words'] = sum(word in text for word in positive_words)
-    features['negative_words'] = sum(word in text for word in negative_words)
-    features['neutral_words'] = sum(word in text for word in neutral_words)
+    # Sentiment word counts
+    features['positive_words'] = sum(word in text.split() for word in positive_words)
+    features['negative_words'] = sum(word in text.split() for word in negative_words)
+    features['neutral_words'] = sum(word in text.split() for word in neutral_words)
+    
+    # Contradiction features
+    contradictions = ['but', 'however', 'although', 'though', 'despite', 'except']
+    features['has_contradiction'] = int(any(word in text.split() for word in contradictions))
     
     # Text statistics
     features['text_length'] = len(text)
     features['word_count'] = len(text.split())
     features['avg_word_length'] = features['text_length'] / (features['word_count'] + 1)
     
+    # Special characters
+    features['exclamation_count'] = text.count('!')
+    features['question_count'] = text.count('?')
+    features['emoji_count'] = sum(1 for char in text if char in '😊😃😄😅😂🤣😭😡💕❤️👍')
+    
+    # Emphasis features
+    features['caps_ratio'] = sum(1 for c in text if c.isupper()) / len(text) if len(text) > 0 else 0
+    features['repeated_chars'] = len(re.findall(r'(.)\1{2,}', text))
+    
     return pd.DataFrame([features])
 
-def analyze_sentiment(text, model, vectorizer):
+def analyze_sentiment(text, model, vectorizer, n_features):
     """Analyze sentiment of a single text"""
     # Preprocess text
     processed_text, _ = preprocess_text(text)
@@ -45,6 +76,12 @@ def analyze_sentiment(text, model, vectorizer):
     
     # Combine features
     features = sparse.hstack([text_vec, extra_features])
+    
+    # Validate feature dimensionality
+    actual_n_features = features.shape[1]
+    if actual_n_features != n_features:
+        st.error(f"Feature dimensionality mismatch: expected {n_features}, got {actual_n_features}")
+        return 'neutral', [0.0, 1.0, 0.0]  # Default to neutral if mismatch
     
     # Get prediction and probabilities
     sentiment = model.predict(features)[0]
@@ -59,10 +96,11 @@ def load_model():
         model = joblib.load('../models/sentiment_model.joblib')
         vectorizer = joblib.load('../models/vectorizer.joblib')
         feature_names = joblib.load('../models/feature_names.joblib')
-        return model, vectorizer, feature_names
+        n_features = joblib.load('../models/n_features.joblib')
+        return model, vectorizer, feature_names, n_features
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
-        return None, None, None
+        return None, None, None, None
 
 def plot_sentiment_distribution(df):
     """Plot sentiment distribution"""
@@ -85,9 +123,9 @@ def main():
     )
     
     try:
-        model, vectorizer = load_model()
+        model, vectorizer, feature_names, n_features = load_model()
         
-        if model is None or vectorizer is None:
+        if model is None or vectorizer is None or feature_names is None or n_features is None:
             st.error("Failed to load model. Please check if model files exist.")
             return
         
@@ -104,7 +142,7 @@ def main():
             if st.button("Analyze") and review_text:
                 with st.spinner("Analyzing..."):
                     # Get sentiment and probabilities
-                    sentiment, probs = analyze_sentiment(review_text, model, vectorizer)
+                    sentiment, probs = analyze_sentiment(review_text, model, vectorizer, n_features)
                     
                     # Display results
                     col1, col2 = st.columns(2)
@@ -148,7 +186,7 @@ def main():
                     # Process each review
                     results = []
                     for text in df['content']:
-                        sentiment, probs = analyze_sentiment(text, model, vectorizer)
+                        sentiment, probs = analyze_sentiment(text, model, vectorizer, n_features)
                         results.append({
                             'text': text,
                             'sentiment': sentiment,

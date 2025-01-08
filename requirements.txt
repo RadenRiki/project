@@ -13,3 +13,21 @@ pip install pandas numpy nltk emoji
 pip install scikit-learn joblib
 pip install seaborn matplotlib scikit-learn joblib
 pip install streamlit plotly
+
+
+/////////
+
+
+streamlit
+pandas
+numpy
+scikit-learn
+joblib
+nltk
+plotly
+wordcloud
+matplotlib
+seaborn
+scipy
+langdetect
+emoji
