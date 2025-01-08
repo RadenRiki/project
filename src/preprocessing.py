@@ -1,3 +1,5 @@
+# preprocessing.py
+
 import pandas as pd
 import numpy as np
 from nltk.tokenize import word_tokenize
@@ -61,7 +63,19 @@ SENTIMENT_WORDS = {
         'neutral': [
             'معتدل', 'متوسط', 'عادي', 'مقبول'
         ]
-    }
+    },
+    'bn': {
+        'positive': [
+            'ভাল', 'সুন্দর', 'চমৎকার', 'প্রিয়', 'খুব ভালো', 'দারুণ'
+        ],
+        'negative': [
+            'খারাপ', 'অসন্তুষ্ট', 'দুর্গম', 'বিলম্ব', 'ভুল', 'নিষিদ্ধ'
+        ],
+        'neutral': [
+            'মাঝারি', 'সাধারণ', 'নিরপেক্ষ'
+        ]
+    },
+    # Tambahkan bahasa lain jika diperlukan
 }
 
 # Common typos and variants dictionary
@@ -78,19 +92,27 @@ TYPOS_DICT = {
     'vry': 'very',
     'prblm': 'problem',
     'prob': 'problem',
-    'gud': 'good',
     'gj': 'good job',
     'gg': 'good game',
+    'smtg': 'something',
+    'btw': 'by the way',
+    'thx': 'thank you',
+    'ty': 'thank you',
+    'lol': 'laughing out loud',
+    'lmao': 'laughing my ass off',
+    # Tambahkan lebih banyak jika diperlukan
 }
 
 def fuzzy_match_word(word, word_list, threshold=85):
     """Menggunakan fuzzy matching untuk menemukan kata yang mirip"""
-    matches = []
+    best_match = word
+    highest_ratio = threshold
     for known_word in word_list:
         ratio = fuzz.ratio(word.lower(), known_word.lower())
-        if ratio > threshold:
-            matches.append((known_word, ratio))
-    return max(matches, key=lambda x: x[1])[0] if matches else word
+        if ratio > highest_ratio:
+            best_match = known_word
+            highest_ratio = ratio
+    return best_match
 
 def handle_typos_and_variants(text):
     """Menangani typo dan variasi kata"""
@@ -105,9 +127,10 @@ def handle_typos_and_variants(text):
             
         # If not in typos dict, try fuzzy matching with sentiment words
         all_sentiment_words = set()
-        for sentiment_lists in SENTIMENT_WORDS['en'].values():  # Using English as base
-            all_sentiment_words.update(sentiment_lists)
-            
+        for lang_sentiments in SENTIMENT_WORDS.values():
+            for sentiment_list in lang_sentiments.values():
+                all_sentiment_words.update(sentiment_list)
+                
         if len(word) > 2:  # Only try to match words longer than 2 characters
             matched = fuzzy_match_word(word, all_sentiment_words)
             corrected_words.append(matched)
@@ -184,6 +207,32 @@ def handle_emojis(text):
         ':red_heart:': 'love',
         ':folded_hands:': 'thank',
         ':clapping_hands:': 'good',
+        ':star:': 'star',
+        ':fire:': 'fire',
+        ':sparkles:': 'sparkle',
+        ':thumbsup:': 'good',
+        ':smile:': 'happy',
+        ':laughing:': 'happy',
+        ':blush:': 'happy',
+        ':sunglasses:': 'cool',
+        ':wink:': 'happy',
+        ':kissing_heart:': 'love',
+        ':grinning:': 'happy',
+        ':smiley:': 'happy',
+        ':heart_eyes:': 'love',
+        ':relaxed:': 'happy',
+        ':joy:': 'happy',
+        ':kissing_closed_eyes:': 'love',
+        ':satisfied:': 'happy',
+        ':smirk:': 'happy',
+        ':relieved:': 'happy',
+        ':heartpulse:': 'love',
+        ':star2:': 'star',
+        ':sparkling_heart:': 'love',
+        ':kiss:': 'love',
+        ':raised_hands:': 'celebrate',
+        ':tada:': 'celebrate',
+        ':confetti_ball:': 'celebrate',
         
         # Negative emojis
         ':thumbs_down:': 'bad',
@@ -195,11 +244,44 @@ def handle_emojis(text):
         ':broken_heart:': 'bad',
         ':face_with_steam_from_nose:': 'angry',
         ':skull:': 'terrible',
+        ':rage:': 'angry',
+        ':sob:': 'sad',
+        ':disappointed_relieved:': 'sad',
+        ':weary:': 'sad',
+        ':triumph:': 'angry',
+        ':scream:': 'angry',
+        ':fearful:': 'sad',
+        ':cry:': 'sad',
+        ':cold_sweat:': 'sad',
+        ':hushed:': 'sad',
+        ':persevere:': 'sad',
+        ':fearful:': 'sad',
+        ':rage1:': 'angry',
+        ':scream_cat:': 'angry',
+        ':crying_cat_face:': 'sad',
+        ':pensive:': 'sad',
         
         # Neutral emojis
         ':neutral_face:': 'okay',
         ':thinking_face:': 'thinking',
         ':face_without_mouth:': 'neutral',
+        ':expressionless:': 'neutral',
+        ':zipper_mouth_face:': 'neutral',
+        ':no_mouth:': 'neutral',
+        ':eyes:': 'neutral',
+        ':nerd_face:': 'neutral',
+        ':expressionless:': 'neutral',
+        ':mask:': 'neutral',
+        ':zzz:': 'sleep',
+        ':shrug:': 'neutral',
+        ':unamused:': 'neutral',
+        ':neutral_face:': 'neutral',
+        ':face_with_monocle:': 'neutral',
+        ':face_with_hand_over_mouth:': 'neutral',
+        ':astonished:': 'neutral',
+        ':smirk:': 'neutral',
+        ':confused:': 'neutral',
+        ':dizzy_face:': 'neutral',
     }
     
     # Replace emojis with their text equivalents
@@ -218,22 +300,25 @@ def analyze_context(text):
     }
     
     # Identify sentence parts
-    sentences = text.split('.')
+    sentences = re.split(r'[.!?]', text)
     for sentence in sentences:
-        words = sentence.split()
+        words = word_tokenize(sentence.lower())
         
         # Check for intensifiers
         intensifiers = ['very', 'really', 'so', 'too', 'extremely', 'quite']
-        context['has_intensifier'] = any(word in intensifiers for word in words)
+        if any(word in intensifiers for word in words):
+            context['has_intensifier'] = True
         
         # Check for negations
         negations = ['not', 'no', 'never', "n't", 'neither', 'nor']
-        context['has_negation'] = any(word in negations for word in words)
+        if any(word in negations for word in words):
+            context['has_negation'] = True
         
         # Check for contradictions
         contradictions = ['but', 'however', 'although', 'though', 'despite', 'yet']
-        context['has_contradiction'] = any(word in contradictions for word in words)
-        
+        if any(word in contradictions for word in words):
+            context['has_contradiction'] = True
+            
     return context
 
 def preprocess_text(text):
@@ -274,7 +359,7 @@ def preprocess_text(text):
             if lang == 'en':
                 # Lemmatization for English text
                 lemmatizer = WordNetLemmatizer()
-                words = text.split()
+                words = word_tokenize(text)
                 text = ' '.join([lemmatizer.lemmatize(word) for word in words])
         
         else:  # For languages without specific processing rules
@@ -303,6 +388,9 @@ def handle_short_text(text):
         'ty': 'thank you',
         '👍': 'good',
         '❤️': 'love',
+        '😍': 'love',
+        '🥰': 'happy',
+        '😊': 'happy',
         
         # Negative
         'meh': 'bad',
@@ -311,12 +399,17 @@ def handle_short_text(text):
         'wtf': 'bad',
         'bs': 'bad',
         '👎': 'bad',
+        '😡': 'angry',
+        '😭': 'sad',
         
         # Neutral
         'k': 'okay',
         'kk': 'okay',
         'hmm': 'neutral',
-        'eh': 'neutral'
+        'eh': 'neutral',
+        '😐': 'neutral',
+        '🤔': 'thinking',
+        '🤨': 'confused',
     }
     
     # Check if text matches any mapping
@@ -435,7 +528,7 @@ def score_to_sentiment(row):
         # Check for intensified sentiments
         has_intensifier = any(word in text.split() for word in intensifiers)
         if has_intensifier:
-            words = text.split()
+            words = word_tokenize(text)
             for i, word in enumerate(words[:-1]):
                 if word in intensifiers:
                     if i+1 < len(words):
@@ -488,7 +581,7 @@ def score_to_sentiment(row):
     except Exception as e:
         logger.error(f"Error in score_to_sentiment: {str(e)}")
         return 'neutral'  # Default case for errors
-        
+
 def prepare_data(df):
     """
     Prepare data for sentiment analysis with improved logging and error handling

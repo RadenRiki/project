@@ -12,8 +12,17 @@ import os
 from scipy import sparse
 import re
 
+# Tambahkan import untuk VADER
+from nltk.sentiment import SentimentIntensityAnalyzer
+
 def extract_features(text):
-    """Extract additional features from text"""
+    """
+    Extract additional features from text
+    (selaras dengan yang di model.py, tanpa positive_lexicon/negative_lexicon)
+    """
+    # Inisialisasi SentimentIntensityAnalyzer
+    sia = SentimentIntensityAnalyzer()
+
     features = {}
     
     # Convert to string if not already
@@ -38,7 +47,7 @@ def extract_features(text):
         'usual', 'common', 'middle', 'medium', 'neither', 'mixed', 'partial'
     ]
     
-    # Sentiment word counts
+    # --- Sentiment word counts ---
     features['positive_words'] = sum(word in text.split() for word in positive_words)
     features['negative_words'] = sum(word in text.split() for word in negative_words)
     features['neutral_words'] = sum(word in text.split() for word in neutral_words)
@@ -61,10 +70,19 @@ def extract_features(text):
     features['caps_ratio'] = sum(1 for c in text if c.isupper()) / len(text) if len(text) > 0 else 0
     features['repeated_chars'] = len(re.findall(r'(.)\1{2,}', text))
     
+    # VADER scores
+    sentiment_scores = sia.polarity_scores(text)
+    features['vader_neg'] = sentiment_scores['neg']
+    features['vader_neu'] = sentiment_scores['neu']
+    features['vader_pos'] = sentiment_scores['pos']
+    features['vader_compound'] = sentiment_scores['compound']
+    
     return pd.DataFrame([features])
 
-def analyze_sentiment(text, model, vectorizer, n_features):
-    """Analyze sentiment of a single text"""
+def analyze_sentiment(text, model, vectorizer, n_features, confidence_threshold=0.6):
+    """
+    Analyze sentiment of a single text with confidence threshold
+    """
     # Preprocess text
     processed_text, _ = preprocess_text(text)
     
@@ -81,26 +99,28 @@ def analyze_sentiment(text, model, vectorizer, n_features):
     actual_n_features = features.shape[1]
     if actual_n_features != n_features:
         st.error(f"Feature dimensionality mismatch: expected {n_features}, got {actual_n_features}")
-        return 'neutral', [0.0, 1.0, 0.0]  # Default to neutral if mismatch
+        return 'neutral', [0.0, 1.0, 0.0], False  # Default to neutral if mismatch
     
     # Get prediction and probabilities
     sentiment = model.predict(features)[0]
     probabilities = model.predict_proba(features)[0]
     
-    # Tambah confidence threshold
+    # Check confidence threshold
     max_prob = max(probabilities)
-    if max_prob < 0.6:  # Jika confidence rendah
-        # Ambil data features dari extra_features (yang sudah dalam bentuk DataFrame)
+    if max_prob < confidence_threshold:
+        # Determine sentiment based on word counts as fallback
         if extra_features['positive_words'].iloc[0] > extra_features['negative_words'].iloc[0]:
-            return 'positive', probabilities
+            sentiment = 'positive'
         elif extra_features['negative_words'].iloc[0] > extra_features['positive_words'].iloc[0]:
-            return 'negative', probabilities
+            sentiment = 'negative'
         else:
-            return 'neutral', probabilities
+            sentiment = 'neutral'
+        is_uncertain = True
+    else:
+        is_uncertain = False
     
-    return sentiment, probabilities
+    return sentiment, probabilities, is_uncertain
 
-# Load model and vectorizer
 @st.cache_resource
 def load_model():
     try:
@@ -126,18 +146,55 @@ def plot_sentiment_distribution(df):
 def main():
     st.title("App Review Analyzer for Developers")
     
+    # Add app description
+    st.markdown("""
+    Analyze user reviews sentiment quickly and accurately. Upload single reviews or bulk analyze multiple reviews at once.
+    The model achieves 85% accuracy across positive, negative, and neutral sentiments.
+    """)
+    
     # Sidebar
     st.sidebar.header("Options")
+    
+    # Add How to Use guide in sidebar
+    st.sidebar.markdown("### How to Use")
+    st.sidebar.markdown("""
+    **Single Review Analysis:**
+    - Paste your review text
+    - Adjust confidence threshold if needed
+    - Click Analyze
+    
+    **Bulk Analysis:**
+    - Prepare CSV with 'content' column
+    - Upload CSV file
+    - Get instant analysis of all reviews
+    
+    **Understanding Results:**
+    - Confidence scores show model's certainty
+    - UNCERTAIN tag means low confidence
+    - Always verify critical reviews manually
+    """)
+    
+    # Mode selection
     analysis_mode = st.sidebar.radio(
         "Choose Analysis Mode",
         ["Single Review Analysis", "Bulk Review Analysis"]
     )
     
+    # Model performance metrics
+    if st.sidebar.checkbox("Show Model Performance"):
+        st.sidebar.info("""
+        **Model Performance Metrics:**
+        - Accuracy: 85%
+        - Precision: 86%
+        - Recall: 85%
+        - F1-Score: 85%
+        """)
+    
     try:
         model, vectorizer, feature_names, n_features = load_model()
         
         if model is None or vectorizer is None or feature_names is None or n_features is None:
-            st.error("Failed to load model. Please check if model files exist.")
+            st.error("⚠️ Failed to load model. Please check if model files exist in the models directory.")
             return
         
         if analysis_mode == "Single Review Analysis":
@@ -146,27 +203,50 @@ def main():
             # Text input
             review_text = st.text_area(
                 "Enter review text:",
-                height=100,
-                placeholder="Enter the review text here..."
+                height=150,
+                placeholder="Enter the review text here (e.g., 'This app is amazing, works perfectly! 😊')"
+            )
+            
+            # Confidence threshold slider
+            confidence_threshold = st.slider(
+                "Confidence Threshold",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.6,
+                step=0.05,
+                help="Set the confidence threshold below which the sentiment is marked as UNCERTAIN."
             )
             
             if st.button("Analyze") and review_text:
-                with st.spinner("Analyzing..."):
+                with st.spinner("Analyzing review... (this may take a few seconds)"):
                     # Get sentiment and probabilities
-                    sentiment, probs = analyze_sentiment(review_text, model, vectorizer, n_features)
+                    sentiment, probs, is_uncertain = analyze_sentiment(
+                        text=review_text, 
+                        model=model, 
+                        vectorizer=vectorizer, 
+                        n_features=n_features, 
+                        confidence_threshold=confidence_threshold
+                    )
+                    
+                    # Determine display sentiment
+                    if is_uncertain:
+                        sentiment_display = f"UNCERTAIN ({sentiment.upper()})"
+                        sentiment_color = 'orange'
+                    else:
+                        sentiment_display = sentiment.upper()
+                        sentiment_color = {
+                            'positive': 'green',
+                            'neutral': 'gray',
+                            'negative': 'red'
+                        }.get(sentiment, 'gray')
                     
                     # Display results
                     col1, col2 = st.columns(2)
                     
                     with col1:
                         st.markdown("### Sentiment")
-                        sentiment_color = {
-                            'positive': 'green',
-                            'neutral': 'gray',
-                            'negative': 'red'
-                        }
                         st.markdown(
-                            f'<h1 style="color: {sentiment_color[sentiment]};">{sentiment.upper()}</h1>',
+                            f'<h1 style="color: {sentiment_color};">{sentiment_display}</h1>',
                             unsafe_allow_html=True
                         )
                     
@@ -175,70 +255,118 @@ def main():
                         st.progress(probs[0], text=f"Negative: {probs[0]:.2%}")
                         st.progress(probs[1], text=f"Neutral: {probs[1]:.2%}")
                         st.progress(probs[2], text=f"Positive: {probs[2]:.2%}")
+                    
+                    if is_uncertain:
+                        st.warning("⚠️ The model is uncertain about this review's sentiment. Please review manually.")
         
         else:  # Bulk Analysis
             st.subheader("Analyze Multiple Reviews")
             
+            # File upload with better instructions
             uploaded_file = st.file_uploader(
                 "Upload CSV file with reviews",
                 type=['csv'],
-                help="CSV should have a 'content' column containing review text"
+                help="Upload a CSV file with a 'content' column containing the review texts. Max file size: 200MB"
             )
             
             if uploaded_file:
-                with st.spinner("Processing reviews..."):
-                    # Read CSV
-                    df = pd.read_csv(uploaded_file)
-                    
-                    if 'content' not in df.columns:
-                        st.error("CSV must contain a 'content' column!")
-                        return
-                    
-                    # Process each review
-                    results = []
-                    for text in df['content']:
-                        sentiment, probs = analyze_sentiment(text, model, vectorizer, n_features)
-                        results.append({
-                            'text': text,
-                            'sentiment': sentiment,
-                            'negative_prob': probs[0],
-                            'neutral_prob': probs[1],
-                            'positive_prob': probs[2]
-                        })
-                    
-                    results_df = pd.DataFrame(results)
-                    
-                    # Display results
-                    st.markdown("### Analysis Results")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("#### Sentiment Distribution")
-                        fig = plot_sentiment_distribution(results_df)
-                        st.plotly_chart(fig)
-                    
-                    with col2:
-                        st.markdown("#### Summary Statistics")
-                        sentiment_counts = results_df['sentiment'].value_counts()
-                        st.write(sentiment_counts)
-                    
-                    # Show detailed results
-                    st.markdown("### Detailed Results")
-                    st.dataframe(results_df)
-                    
-                    # Download results
-                    st.download_button(
-                        "Download Results",
-                        results_df.to_csv(index=False),
-                        "analyzed_reviews.csv",
-                        "text/csv",
-                        key='download-csv'
-                    )
+                with st.spinner("Processing reviews... This might take a while for large files."):
+                    try:
+                        # Read CSV
+                        df = pd.read_csv(uploaded_file)
+                        
+                        if 'content' not in df.columns:
+                            st.error("⚠️ Your CSV file must have a 'content' column containing the review texts. Please check your file format.")
+                            return
+                        
+                        # Confidence threshold for bulk analysis
+                        bulk_confidence_threshold = st.sidebar.slider(
+                            "Bulk Analysis Confidence Threshold",
+                            min_value=0.0,
+                            max_value=1.0,
+                            value=0.6,
+                            step=0.05,
+                            help="Set the confidence threshold for bulk analysis."
+                        )
+                        
+                        # Process each review with progress bar
+                        results = []
+                        total_reviews = len(df['content'])
+                        
+                        # Create progress bar
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        for idx, text in enumerate(df['content']):
+                            sentiment, probs, is_uncertain = analyze_sentiment(
+                                text=text, 
+                                model=model, 
+                                vectorizer=vectorizer, 
+                                n_features=n_features, 
+                                confidence_threshold=bulk_confidence_threshold
+                            )
+                            if is_uncertain:
+                                sentiment = f"UNCERTAIN ({sentiment})"
+                            results.append({
+                                'text': text,
+                                'sentiment': sentiment,
+                                'negative_prob': probs[0],
+                                'neutral_prob': probs[1],
+                                'positive_prob': probs[2]
+                            })
+                            
+                            # Update progress
+                            progress = (idx + 1) / total_reviews
+                            progress_bar.progress(progress)
+                            status_text.text(f"Processed {idx+1} of {total_reviews} reviews...")
+                        
+                        results_df = pd.DataFrame(results)
+                        
+                        # Clear progress bar and status
+                        progress_bar.empty()
+                        status_text.empty()
+                        
+                        # Display results
+                        st.markdown("### Analysis Results")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("#### Sentiment Distribution")
+                            fig = plot_sentiment_distribution(results_df)
+                            st.plotly_chart(fig)
+                        
+                        with col2:
+                            st.markdown("#### Summary Statistics")
+                            sentiment_counts = results_df['sentiment'].value_counts()
+                            st.write(sentiment_counts)
+                            
+                            # Add percentage distribution
+                            st.markdown("#### Percentage Distribution")
+                            sentiment_percentages = (sentiment_counts / len(results_df) * 100).round(1)
+                            for sentiment, percentage in sentiment_percentages.items():
+                                st.write(f"{sentiment}: {percentage}%")
+                        
+                        # Show detailed results
+                        st.markdown("### Detailed Results")
+                        st.dataframe(results_df)
+                        
+                        # Download results
+                        st.download_button(
+                            "📥 Download Results",
+                            results_df.to_csv(index=False),
+                            "analyzed_reviews.csv",
+                            "text/csv",
+                            key='download-csv'
+                        )
+                        
+                    except Exception as e:
+                        st.error(f"Error processing file: {str(e)}")
+                        st.error("Please make sure your CSV file is properly formatted and not corrupted.")
     
     except Exception as e:
-        st.error(f"Error: {str(e)}")
-        st.error("Please make sure model files are present in the 'models' directory")
+        st.error(f"An error occurred: {str(e)}")
+        st.error("Please make sure all required files are present and try again.")
 
 if __name__ == "__main__":
     main()

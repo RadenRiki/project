@@ -1,3 +1,5 @@
+# test_model.py
+
 import pandas as pd
 import numpy as np
 from preprocessing import prepare_data
@@ -63,6 +65,13 @@ def test_model():
     print("\nTraining model...")
     model, vectorizer, performance = train_model(df_clean)
     
+    # Load n_features
+    try:
+        n_features = joblib.load('../models/n_features.joblib')
+    except Exception as e:
+        print(f"Error loading n_features: {str(e)}")
+        return
+    
     # Print performance metrics
     print("\n=== MODEL PERFORMANCE ===")
     print("\nClassification Report:")
@@ -85,6 +94,7 @@ def test_model():
     print("\n=== TESTING PREDICTIONS ===")
     test_texts = [
         # Positive examples
+        "I absolutely love this app! It has changed my life for the better 😊👍",
         "This app is amazing, works perfectly! 😊",
         "Love this app! Best one I've ever used. Super smooth and helpful",
         "Great improvements in the latest update, much faster now",
@@ -107,10 +117,16 @@ def test_model():
     
     print("\nTesting various types of reviews:")
     for text in test_texts:
-        sentiment, probs = predict_sentiment(text, model, vectorizer)
+        sentiment, probs, is_uncertain = predict_sentiment(text, model, vectorizer, n_features, confidence_threshold=0.6)
+        if is_uncertain:
+            sentiment_display = f"UNCERTAIN ({sentiment.upper()})"
+            uncertainty_note = " - Model is uncertain about this prediction."
+        else:
+            sentiment_display = sentiment.upper()
+            uncertainty_note = ""
         print(f"\nText: {text}")
-        print(f"Predicted sentiment: {sentiment}")
-        print(f"Confidence scores: negative={probs[0]:.2f}, neutral={probs[1]:.2f}, positive={probs[2]:.2f}")
+        print(f"Predicted Sentiment: {sentiment_display}{uncertainty_note}")
+        print(f"Confidence Scores: Negative={probs[0]:.2f}, Neutral={probs[1]:.2f}, Positive={probs[2]:.2f}")
         
     print("\nModel and vectorizer saved in ../models/")
     print("Visualization plots saved in ../plots/")
