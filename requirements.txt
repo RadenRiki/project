@@ -12,3 +12,4 @@ pip install -r requirements.txt
 pip install pandas numpy nltk emoji
 pip install scikit-learn joblib
 pip install seaborn matplotlib scikit-learn joblib
+pip install streamlit plotly

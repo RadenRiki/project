@@ -22,9 +22,11 @@ def detect_language(text):
         
         # Handle short text differently
         if len(text.split()) < 3:
-            # Check for positive/negative words
-            positive_words = {'good', 'great', 'nice', 'super', 'perfect', 'awesome'}
-            negative_words = {'bad', 'poor', 'terrible', 'worst'}
+            # Extended positive/negative words for short text
+            positive_words = {'good', 'great', 'nice', 'super', 'perfect', 'awesome', 'excellent', 
+                            'amazing', 'love', 'best', 'fantastic', 'wonderful', 'brilliant'}
+            negative_words = {'bad', 'poor', 'terrible', 'worst', 'horrible', 'awful', 'useless', 
+                            'waste', 'garbage', 'rubbish', 'hate'}
             
             if text.lower() in positive_words or text.lower() in negative_words:
                 return 'en'
@@ -108,25 +110,67 @@ def preprocess_text(text):
     except:
         return "", "unknown"
 
-def validate_sentiment(text, score):
+def score_to_sentiment(row):
     """
-    Validate if the sentiment score matches the content
-    Returns corrected score if necessary
+    Convert score to sentiment using both score and text content
     """
-    # List of negative keywords
-    negative_keywords = ['not', 'cannot', 'cant', 'can\'t', 'problem', 'issue', 
-                        'bad', 'poor', 'terrible', 'horrible', 'fail', 'bug', 
-                        'crash', 'error', 'not working', 'doesn\'t work']
-    
-    text_lower = text.lower()
-    
-    # Check if high score (4-5) contains negative keywords
-    if score >= 4 and any(keyword in text_lower for keyword in negative_keywords):
-        return 2  # Adjust to negative sentiment
-    
-    return score
+    try:
+        score = row['score']
+        text = str(row['content']).lower()
+        
+        # Strong sentiment indicators
+        strong_positive = ['amazing', 'perfect', 'excellent', 'love', 'best', 'fantastic',
+                         'awesome', 'brilliant', 'outstanding', 'superb', 'wonderful']
+        strong_negative = ['terrible', 'worst', 'horrible', 'waste', 'useless', 'garbage',
+                         'awful', 'pathetic', 'rubbish', 'hate', 'scam']
+        neutral_indicators = ['okay', 'average', 'decent', 'alright', 'fair', 'moderate']
+        
+        # Count sentiment words
+        positive_count = sum(word in text for word in strong_positive)
+        negative_count = sum(word in text for word in strong_negative)
+        neutral_count = sum(word in text for word in neutral_indicators)
+        
+        # Detect contradictions
+        contradictions = ['but', 'however', 'although', 'though', 'despite', 'except']
+        has_contradiction = any(word in text for word in contradictions)
+        
+        # Rule-based classification
+        if score >= 4 and any(word in text for word in strong_negative):
+            return 'negative'
+        elif score <= 2 and any(word in text for word in strong_positive):
+            return 'positive'
+        elif has_contradiction:
+            # For contradictory statements, rely more on text than score
+            if positive_count > negative_count:
+                return 'positive'
+            elif negative_count > positive_count:
+                return 'negative'
+            else:
+                return 'neutral'
+        elif score >= 4:
+            return 'positive'
+        elif score <= 2:
+            return 'negative'
+        elif neutral_count > 0 or (positive_count == negative_count):
+            return 'neutral'
+        else:
+            return 'neutral'  # Default case
+            
+    except Exception as e:
+        print(f"Error in score_to_sentiment: {str(e)}")
+        if pd.isna(score):
+            return 'neutral'
+        elif score >= 4:
+            return 'positive'
+        elif score <= 2:
+            return 'negative'
+        else:
+            return 'neutral'
 
 def prepare_data(df):
+    """
+    Prepare data for sentiment analysis
+    """
     # Copy the dataframe
     df_clean = df.copy()
     
@@ -135,17 +179,14 @@ def prepare_data(df):
     df_clean['cleaned_content'] = processed_data.apply(lambda x: x[0])
     df_clean['language'] = processed_data.apply(lambda x: x[1])
     
-    # Validate and correct sentiment scores
-    df_clean['corrected_score'] = df_clean.apply(
-        lambda x: validate_sentiment(x['content'], x['score']), axis=1
-    )
-    
-    # Convert scores to sentiment categories using corrected scores
-    df_clean['sentiment'] = pd.cut(df_clean['corrected_score'], 
-                                 bins=[0, 2, 3, 5], 
-                                 labels=['negative', 'neutral', 'positive'])
+    # Convert scores to sentiment using improved logic
+    df_clean['sentiment'] = df_clean.apply(score_to_sentiment, axis=1)
     
     # Remove empty content after cleaning
     df_clean = df_clean[df_clean['cleaned_content'] != ""]
+    
+    # Add additional features
+    df_clean['text_length'] = df_clean['cleaned_content'].str.len()
+    df_clean['word_count'] = df_clean['cleaned_content'].str.split().str.len()
     
     return df_clean
